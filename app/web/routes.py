@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, send_file, flash, redirect
+from flask import Blueprint, render_template, request, send_file, flash, redirect, jsonify
 from ..data import fetch_price_history
 from ..data.indicators import sma, ema, rsi, macd
 from ..models import ProphetForecaster
@@ -7,7 +7,10 @@ from ..reports import build_pdf
 import tempfile, io, pandas as pd
 import numpy as np
 from datetime import datetime
+import logging
+import traceback
 
+logger = logging.getLogger(__name__)
 bp = Blueprint('web', __name__)
 
 def calculate_indicators(df):
@@ -171,21 +174,88 @@ def index():
     if request.method == 'POST':
         ticker = request.form['ticker'].upper().strip()
         horizon = int(request.form.get('horizon',30))
+        
         try:
+            logger.info(f"Processing request for ticker: {ticker} with horizon: {horizon}")
             df = fetch_price_history(ticker)
+            
+            if df.empty:
+                logger.error(f"Empty dataframe returned for {ticker}")
+                flash(f"No data available for {ticker}. Please try another stock symbol.", 'danger')
+                return redirect('/')
+                
+            logger.info(f"Successfully fetched data for {ticker}: {len(df)} records")
+            
+            # Calculate all indicators
+            stats, price_change_pct = calculate_indicators(df)
+            
+            # Forecast
+            logger.info(f"Generating forecast for {ticker} with horizon: {horizon}")
+            forecaster = ProphetForecaster()
+            forecaster.fit(df)
+            forecast_df = forecaster.predict(horizon)
+            
+            # Get forecast metrics
+            current_close = df['close'].iloc[-1]
+            forecast_close = forecast_df['yhat'].iloc[-1]
+            forecast_change = forecast_close - current_close
+            forecast_change_pct = (forecast_change / current_close) * 100
+            forecast_end_date = forecast_df.index[-1].strftime('%Y-%m-%d')
+            
+            # Add forecast stats
+            stats.update({
+                'forecast_close': f"{forecast_close:.2f}",
+                'forecast_change_pct': f"{forecast_change_pct:.2f}",
+                'forecast_end_date': forecast_end_date
+            })
+            
+            # Create charts
+            logger.info("Generating charts")
+            price_fig = price_chart(df)
+            fc_fig = overlay_forecast(df, forecast_df)
+            
+            # Current date for display
+            current_date = datetime.now().strftime('%B %d, %Y')
+            
+            logger.info(f"Rendering dashboard for {ticker}")
+            return render_template('dashboard.html', 
+                                  ticker=ticker, 
+                                  horizon=horizon,
+                                  stats=stats,
+                                  price_change_pct=price_change_pct,  # Pass the numeric value
+                                  price_change_pct_formatted=f"{price_change_pct:.2f}",  # Pass the formatted string as well
+                                  current_date=current_date,
+                                  price_chart=price_fig.to_html(full_html=False, include_plotlyjs='cdn'),
+                                  forecast_chart=fc_fig.to_html(full_html=False, include_plotlyjs=False)) 
         except ValueError as e:
+            logger.error(f"Value error for {ticker}: {str(e)}")
             flash(str(e), 'danger')
             return redirect('/')
-        
-        # Calculate all indicators
-        stats, price_change_pct = calculate_indicators(df)
+        except Exception as e:
+            logger.error(f"Error processing {ticker}: {str(e)}")
+            logger.error(traceback.format_exc())
+            flash(f"Error processing {ticker}: {str(e)}", 'danger')
+            return redirect('/')
+            
+    return render_template('index.html')
+
+@bp.post('/download/pdf')
+def download_pdf():
+    ticker = request.form['ticker']
+    horizon = int(request.form['horizon'])
+    
+    try:
+        logger.info(f"Generating PDF report for {ticker}")
+        # Get data and calculate indicators
+        df = fetch_price_history(ticker)
+        stats, _ = calculate_indicators(df)
         
         # Forecast
         forecaster = ProphetForecaster()
         forecaster.fit(df)
         forecast_df = forecaster.predict(horizon)
         
-        # Get forecast metrics
+        # Get forecast metrics for the report
         current_close = df['close'].iloc[-1]
         forecast_close = forecast_df['yhat'].iloc[-1]
         forecast_change = forecast_close - current_close
@@ -203,83 +273,54 @@ def index():
         price_fig = price_chart(df)
         fc_fig = overlay_forecast(df, forecast_df)
         
-        # Current date for display
+        # Current date for the report
         current_date = datetime.now().strftime('%B %d, %Y')
         
-        return render_template('dashboard.html', 
-                              ticker=ticker, 
-                              horizon=horizon,
-                              stats=stats,
-                              price_change_pct=price_change_pct,  # Pass the numeric value
-                              price_change_pct_formatted=f"{price_change_pct:.2f}",  # Pass the formatted string as well
-                              current_date=current_date,
-                              price_chart=price_fig.to_html(full_html=False, include_plotlyjs='cdn'),
-    
-                                forecast_chart=fc_fig.to_html(full_html=False, include_plotlyjs=False)) 
-    return render_template('index.html')
-
-@bp.post('/download/pdf')
-def download_pdf():
-    ticker = request.form['ticker']
-    horizon = int(request.form['horizon'])
-    
-    # Get data and calculate indicators
-    df = fetch_price_history(ticker)
-    stats, _ = calculate_indicators(df)
-    
-    # Forecast
-    forecaster = ProphetForecaster()
-    forecaster.fit(df)
-    forecast_df = forecaster.predict(horizon)
-    
-    # Get forecast metrics for the report
-    current_close = df['close'].iloc[-1]
-    forecast_close = forecast_df['yhat'].iloc[-1]
-    forecast_change = forecast_close - current_close
-    forecast_change_pct = (forecast_change / current_close) * 100
-    forecast_end_date = forecast_df.index[-1].strftime('%Y-%m-%d')
-    
-    # Add forecast stats
-    stats.update({
-        'forecast_close': f"{forecast_close:.2f}",
-        'forecast_change_pct': f"{forecast_change_pct:.2f}",
-        'forecast_end_date': forecast_end_date
-    })
-    
-    # Create charts
-    price_fig = price_chart(df)
-    fc_fig = overlay_forecast(df, forecast_df)
-    
-    # Current date for the report
-    current_date = datetime.now().strftime('%B %d, %Y')
-    
-    # Create PDF
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as f:
-        build_pdf({
-            'ticker': ticker,
-            'horizon': horizon,
-            'stats': stats,
-            'current_date': current_date,
-            'fig_price': price_fig.to_html(full_html=False, include_plotlyjs='cdn'),
-            'fig_forecast': fc_fig.to_html(full_html=False, include_plotlyjs=False)
-        }, f.name)
-        
-        return send_file(f.name, as_attachment=True, download_name=f"{ticker}_report.pdf")
+        # Create PDF
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as f:
+            build_pdf({
+                'ticker': ticker,
+                'horizon': horizon,
+                'stats': stats,
+                'current_date': current_date,
+                'fig_price': price_fig.to_html(full_html=False, include_plotlyjs='cdn'),
+                'fig_forecast': fc_fig.to_html(full_html=False, include_plotlyjs=False)
+            }, f.name)
+            
+            logger.info(f"PDF report generated successfully for {ticker}")
+            return send_file(f.name, as_attachment=True, download_name=f"{ticker}_report.pdf")
+    except Exception as e:
+        logger.error(f"Error generating PDF for {ticker}: {str(e)}")
+        logger.error(traceback.format_exc())
+        flash(f"Error generating PDF: {str(e)}", 'danger')
+        return redirect('/')
 
 @bp.post('/download/csv')
 def download_csv():
     ticker = request.form['ticker']
     horizon = int(request.form['horizon'])
     
-    df = fetch_price_history(ticker)
-    forecaster = ProphetForecaster()
-    forecaster.fit(df)
-    forecast_df = forecaster.predict(horizon)
-    
-    return send_file(
-        io.BytesIO(forecast_df.to_csv().encode()), 
-        mimetype='text/csv',
-        as_attachment=True, 
-        download_name=f"{ticker}_forecast.csv"
-    )
-    
+    try:
+        logger.info(f"Generating CSV forecast for {ticker}")
+        df = fetch_price_history(ticker)
+        forecaster = ProphetForecaster()
+        forecaster.fit(df)
+        forecast_df = forecaster.predict(horizon)
+        
+        logger.info(f"CSV forecast generated successfully for {ticker}")
+        return send_file(
+            io.BytesIO(forecast_df.to_csv().encode()), 
+            mimetype='text/csv',
+            as_attachment=True, 
+            download_name=f"{ticker}_forecast.csv"
+        )
+    except Exception as e:
+        logger.error(f"Error generating CSV for {ticker}: {str(e)}")
+        logger.error(traceback.format_exc())
+        flash(f"Error generating CSV: {str(e)}", 'danger')
+        return redirect('/')
+
+@bp.route('/health')
+def health_check():
+    """Simple endpoint to check if the application is running"""
+    return jsonify({"status": "ok", "message": "Stock forecast app is running"})
