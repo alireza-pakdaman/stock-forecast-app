@@ -1,0 +1,277 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>{{ ticker }} Stock Analysis Report</title>
+  <style>
+    body { 
+      font-family: 'Segoe UI', Arial, sans-serif; 
+      margin: 0; 
+      padding: 20px;
+      color: #333;
+      line-height: 1.6;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+      padding-bottom: 20px;
+      border-bottom: 2px solid #2c3e50;
+    }
+    .title {
+      color: #2c3e50;
+      margin: 0;
+      font-size: 28px;
+      font-weight: 700;
+    }
+    .subtitle {
+      color: #7f8c8d;
+      font-size: 14px;
+      margin: 5px 0 0;
+    }
+    h2 {
+      color: #2c3e50;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 8px;
+      margin-top: 30px;
+      font-size: 20px;
+    }
+    .stats-container {
+      display: flex;
+      flex-wrap: wrap;
+      margin: 0 -10px;
+    }
+    .stat-card {
+      flex: 1 0 21%;
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 15px;
+      margin: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .stat-title {
+      font-size: 14px;
+      color: #7f8c8d;
+      margin: 0 0 8px;
+    }
+    .stat-value {
+      font-size: 20px;
+      font-weight: bold;
+      margin: 0;
+      color: #2c3e50;
+    }
+    .stat-change {
+      font-size: 14px;
+      margin: 5px 0 0;
+    }
+    .positive { color: #27ae60; }
+    .negative { color: #e74c3c; }
+    .chart-container {
+      margin: 20px 0;
+      padding: 10px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 10px;
+      text-align: left;
+    }
+    th {
+      background: #f0f0f0;
+      font-weight: 600;
+    }
+    .buy { color: #27ae60; }
+    .sell { color: #e74c3c; }
+    .neutral { color: #f39c12; }
+    .footer {
+      margin-top: 40px;
+      font-size: 12px;
+      color: #7f8c8d;
+      text-align: center;
+      border-top: 1px solid #eee;
+      padding-top: 20px;
+    }
+    .forecast-summary {
+      background: #ecf0f1;
+      padding: 15px;
+      border-radius: 8px;
+      margin: 20px 0;
+    }
+    .rating-badge {
+      display: inline-block;
+      padding: 5px 10px;
+      border-radius: 4px;
+      font-weight: bold;
+      font-size: 14px;
+      color: white;
+    }
+    .strong-buy, .buy { background: #27ae60; }
+    .strong-sell, .sell { background: #e74c3c; }
+    .neutral { background: #f39c12; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1 class="title">{{ ticker }} Stock Analysis Report</h1>
+    <p class="subtitle">{{ horizon }}-day forecast | Generated on {{ current_date }}</p>
+  </div>
+  
+  <h2>Market Summary</h2>
+  <div class="stats-container">
+    <div class="stat-card">
+      <p class="stat-title">Latest Close</p>
+      <p class="stat-value">${{ stats.latest_close }}</p>
+      <p class="stat-change {% if stats.price_change_1d|float > 0 %}positive{% else %}negative{% endif %}">
+        {{ stats.price_change_1d }}% (1-day)
+      </p>
+    </div>
+    
+    <div class="stat-card">
+      <p class="stat-title">30-Day Volatility</p>
+      <p class="stat-value">{{ stats.volatility_30d }}</p>
+      <p class="stat-change {% if stats.volatility_high %}negative{% else %}positive{% endif %}">
+        {% if stats.volatility_high %}Higher than normal{% else %}Normal range{% endif %}
+      </p>
+    </div>
+    
+    <div class="stat-card">
+      <p class="stat-title">RSI (14)</p>
+      <p class="stat-value">{{ stats.rsi }}</p>
+      <p class="stat-change 
+        {% if stats.rsi_val > 70 %}negative{% elif stats.rsi_val < 30 %}positive{% endif %}">
+        {% if stats.rsi_val > 70 %}Overbought{% elif stats.rsi_val < 30 %}Oversold{% else %}Neutral{% endif %}
+      </p>
+    </div>
+    
+    <div class="stat-card">
+      <p class="stat-title">Technical Rating</p>
+      <p class="stat-value">
+        <span class="rating-badge {{ stats.rating|lower|replace(' ', '-') }}">{{ stats.rating }}</span>
+      </p>
+      <p class="stat-change">
+        Buy: {{ stats.buy_signals }}% | Sell: {{ stats.sell_signals }}%
+      </p>
+    </div>
+  </div>
+  
+  <div class="chart-container">
+    <h2>Historical Price</h2>
+    {{ fig_price|safe }}
+  </div>
+  
+  <div class="chart-container">
+    <h2>AI-Powered Price Forecast</h2>
+    {{ fig_forecast|safe }}
+    
+    <div class="forecast-summary">
+      <p><strong>Forecast Period:</strong> {{ horizon }} days (ending {{ stats.forecast_end_date }})</p>
+      <p><strong>Current Price:</strong> ${{ stats.latest_close }}</p>
+      <p><strong>Predicted Price:</strong> ${{ stats.forecast_close }}</p>
+      <p><strong>Predicted Change:</strong> 
+        <span class="{% if stats.forecast_change_pct|float > 0 %}positive{% else %}negative{% endif %}">
+          {{ stats.forecast_change_pct }}%
+        </span>
+      </p>
+    </div>
+  </div>
+  
+  <h2>Technical Indicators</h2>
+  <div style="display: flex; gap: 20px;">
+    <div style="flex: 1;">
+      <h3>Moving Averages</h3>
+      <table>
+        <tr>
+          <th>Indicator</th>
+          <th>Value</th>
+          <th>Signal</th>
+        </tr>
+        <tr>
+          <td>SMA (7)</td>
+          <td>${{ stats.sma_7 }}</td>
+          <td class="{% if stats.sma_7_indicator == 'Buy' %}buy{% elif stats.sma_7_indicator == 'Sell' %}sell{% else %}neutral{% endif %}">
+            {{ stats.sma_7_indicator }}
+          </td>
+        </tr>
+        <tr>
+          <td>SMA (20)</td>
+          <td>${{ stats.sma_20 }}</td>
+          <td class="{% if stats.sma_20_indicator == 'Buy' %}buy{% elif stats.sma_20_indicator == 'Sell' %}sell{% else %}neutral{% endif %}">
+            {{ stats.sma_20_indicator }}
+          </td>
+        </tr>
+        <tr>
+          <td>SMA (50)</td>
+          <td>${{ stats.sma_50 }}</td>
+          <td class="{% if stats.sma_50_indicator == 'Buy' %}buy{% elif stats.sma_50_indicator == 'Sell' %}sell{% else %}neutral{% endif %}">
+            {{ stats.sma_50_indicator }}
+          </td>
+        </tr>
+        <tr>
+          <td>EMA (12)</td>
+          <td>${{ stats.ema_12 }}</td>
+          <td class="{% if stats.ema_12_indicator == 'Buy' %}buy{% elif stats.ema_12_indicator == 'Sell' %}sell{% else %}neutral{% endif %}">
+            {{ stats.ema_12_indicator }}
+          </td>
+        </tr>
+        <tr>
+          <td>EMA (26)</td>
+          <td>${{ stats.ema_26 }}</td>
+          <td class="{% if stats.ema_26_indicator == 'Buy' %}buy{% elif stats.ema_26_indicator == 'Sell' %}sell{% else %}neutral{% endif %}">
+            {{ stats.ema_26_indicator }}
+          </td>
+        </tr>
+      </table>
+    </div>
+    
+    <div style="flex: 1;">
+      <h3>Oscillators & Other Indicators</h3>
+      <table>
+        <tr>
+          <th>Indicator</th>
+          <th>Value</th>
+          <th>Signal</th>
+        </tr>
+        <tr>
+          <td>MACD</td>
+          <td>{{ stats.macd }}</td>
+          <td class="{% if stats.macd_indicator == 'Buy' %}buy{% elif stats.macd_indicator == 'Sell' %}sell{% else %}neutral{% endif %}">
+            {{ stats.macd_indicator }}
+          </td>
+        </tr>
+        <tr>
+          <td>Stochastic</td>
+          <td>{{ stats.stoch }}</td>
+          <td class="{% if stats.stoch_indicator == 'Buy' %}buy{% elif stats.stoch_indicator == 'Sell' %}sell{% else %}neutral{% endif %}">
+            {{ stats.stoch_indicator }}
+          </td>
+        </tr>
+        <tr>
+          <td>Bollinger Bands</td>
+          <td>{{ stats.bb_width }}</td>
+          <td class="{% if stats.bb_indicator == 'Buy' %}buy{% elif stats.bb_indicator == 'Sell' %}sell{% else %}neutral{% endif %}">
+            {{ stats.bb_indicator }}
+          </td>
+        </tr>
+        <tr>
+          <td>ATR (14)</td>
+          <td>{{ stats.atr }}</td>
+          <td>-</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+  
+  <div class="footer">
+    <p>This report was generated by Stock Forecaster AI on {{ current_date }}.</p>
+    <p>DISCLAIMER: This report is for informational purposes only and does not constitute investment advice.</p>
+    <p>Past performance is not indicative of future results. Always do your own research before making investment decisions.</p>
+  </div>
+</body>
+</html>

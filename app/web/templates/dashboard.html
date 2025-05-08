@@ -1,0 +1,285 @@
+{% extends 'base.html' %}
+{% block title %}{{ ticker }} Forecast{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+  <div class="col-md-8">
+    <h1 class="mb-2">
+      {{ ticker }} 
+      <span class="fs-4 text-secondary">{{ horizon }}-day Forecast</span>
+      {% if price_change_pct|float > 0 %}
+        <span class="market-badge market-up"><i class="fas fa-arrow-up me-1"></i>{{ price_change_pct }}%</span>
+      {% else %}
+        <span class="market-badge market-down"><i class="fas fa-arrow-down me-1"></i>{{ price_change_pct|replace('-', '') }}%</span>
+      {% endif %}
+    </h1>
+    <p class="text-muted">Analysis generated on {{ current_date }} | Data source: Yahoo Finance</p>
+  </div>
+  <div class="col-md-4 text-end">
+    <form method="post" action="/download/pdf" class="d-inline">
+      <input type="hidden" name="ticker" value="{{ ticker }}">
+      <input type="hidden" name="horizon" value="{{ horizon }}">
+      <button type="submit" class="btn btn-primary">
+        <i class="fas fa-file-pdf me-2"></i>Download PDF Report
+      </button>
+    </form>
+  </div>
+</div>
+
+<div class="row">
+  <!-- Stats Cards -->
+  <div class="col-md-3 mb-4">
+    <div class="card stat-card h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h5 class="stat-label mb-0">Latest Close</h5>
+          <div class="stat-icon"><i class="fas fa-dollar-sign"></i></div>
+        </div>
+        <div class="stat-value">${{ stats.latest_close }}</div>
+        <div class="mt-2 small text-{{ stats.latest_close_class }}">
+          <i class="fas fa-{{ stats.latest_close_icon }} me-1"></i>
+          {{ stats.price_change_1d }}% (1-day)
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="col-md-3 mb-4">
+    <div class="card stat-card h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h5 class="stat-label mb-0">Volume</h5>
+          <div class="stat-icon"><i class="fas fa-chart-bar"></i></div>
+        </div>
+        <div class="stat-value">{{ stats.volume }}</div>
+        <div class="mt-2 small text-{{ stats.volume_class }}">
+          <i class="fas fa-{{ stats.volume_icon }} me-1"></i>
+          {{ stats.volume_change_pct }}% vs. avg
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="col-md-3 mb-4">
+    <div class="card stat-card h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h5 class="stat-label mb-0">30D Volatility</h5>
+          <div class="stat-icon"><i class="fas fa-wave-square"></i></div>
+        </div>
+        <div class="stat-value">{{ stats.volatility_30d }}</div>
+        <div class="mt-2 small {% if stats.volatility_high %}text-warning{% else %}text-success{% endif %}">
+          <i class="fas fa-{% if stats.volatility_high %}exclamation-triangle{% else %}check-circle{% endif %} me-1"></i>
+          {% if stats.volatility_high %}Higher than normal{% else %}Normal range{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="col-md-3 mb-4">
+    <div class="card stat-card h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h5 class="stat-label mb-0">RSI (14)</h5>
+          <div class="stat-icon"><i class="fas fa-tachometer-alt"></i></div>
+        </div>
+        <div class="stat-value">{{ stats.rsi }}</div>
+        <div class="mt-2 small {% if stats.rsi_val > 70 %}text-danger{% elif stats.rsi_val < 30 %}text-success{% else %}text-muted{% endif %}">
+          <i class="fas fa-{% if stats.rsi_val > 70 %}exclamation-circle{% elif stats.rsi_val < 30 %}check-circle{% else %}circle{% endif %} me-1"></i>
+          {% if stats.rsi_val > 70 %}Overbought{% elif stats.rsi_val < 30 %}Oversold{% else %}Neutral{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-md-8">
+    <!-- Price Chart -->
+    <div class="card mb-4">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h4 class="mb-0"><i class="fas fa-chart-line me-2"></i>Price History</h4>
+        <div class="btn-group btn-group-sm" role="group">
+          <button type="button" class="btn btn-outline-secondary active">1M</button>
+          <button type="button" class="btn btn-outline-secondary">3M</button>
+          <button type="button" class="btn btn-outline-secondary">6M</button>
+          <button type="button" class="btn btn-outline-secondary">1Y</button>
+        </div>
+      </div>
+      <div class="card-body chart-container">
+        {{ price_chart|safe }}
+      </div>
+    </div>
+    
+    <!-- Forecast Chart -->
+    <div class="card mb-4">
+      <div class="card-header">
+        <h4 class="mb-0"><i class="fas fa-robot me-2"></i>AI Price Forecast</h4>
+      </div>
+      <div class="card-body chart-container">
+        {{ forecast_chart|safe }}
+      </div>
+      <div class="card-footer bg-light">
+        <div class="row">
+          <div class="col-md-4 text-center">
+            <div class="fw-bold">Forecast End Date</div>
+            <div>{{ stats.forecast_end_date }}</div>
+          </div>
+          <div class="col-md-4 text-center">
+            <div class="fw-bold">Predicted Close</div>
+            <div>${{ stats.forecast_close }}</div>
+          </div>
+          <div class="col-md-4 text-center">
+            <div class="fw-bold">Predicted Change</div>
+            <div class="{% if stats.forecast_change_pct|float > 0 %}text-success{% else %}text-danger{% endif %}">
+              {{ stats.forecast_change_pct }}%
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="col-md-4">
+    <!-- Moving Averages -->
+    <div class="card mb-4">
+      <div class="card-header">
+        <h5 class="mb-0"><i class="fas fa-signal me-2"></i>Moving Averages</h5>
+      </div>
+      <div class="card-body">
+        <table class="table table-sm">
+          <tbody>
+            <tr>
+              <td>SMA (7)</td>
+              <td class="text-end">${{ stats.sma_7 }}</td>
+              <td class="text-{% if stats.sma_7_indicator == 'Buy' %}success{% elif stats.sma_7_indicator == 'Sell' %}danger{% else %}warning{% endif %} text-end">
+                {{ stats.sma_7_indicator }}
+              </td>
+            </tr>
+            <tr>
+              <td>SMA (20)</td>
+              <td class="text-end">${{ stats.sma_20 }}</td>
+              <td class="text-{% if stats.sma_20_indicator == 'Buy' %}success{% elif stats.sma_20_indicator == 'Sell' %}danger{% else %}warning{% endif %} text-end">
+                {{ stats.sma_20_indicator }}
+              </td>
+            </tr>
+            <tr>
+              <td>SMA (50)</td>
+              <td class="text-end">${{ stats.sma_50 }}</td>
+              <td class="text-{% if stats.sma_50_indicator == 'Buy' %}success{% elif stats.sma_50_indicator == 'Sell' %}danger{% else %}warning{% endif %} text-end">
+                {{ stats.sma_50_indicator }}
+              </td>
+            </tr>
+            <tr>
+              <td>EMA (12)</td>
+              <td class="text-end">${{ stats.ema_12 }}</td>
+              <td class="text-{% if stats.ema_12_indicator == 'Buy' %}success{% elif stats.ema_12_indicator == 'Sell' %}danger{% else %}warning{% endif %} text-end">
+                {{ stats.ema_12_indicator }}
+              </td>
+            </tr>
+            <tr>
+              <td>EMA (26)</td>
+              <td class="text-end">${{ stats.ema_26 }}</td>
+              <td class="text-{% if stats.ema_26_indicator == 'Buy' %}success{% elif stats.ema_26_indicator == 'Sell' %}danger{% else %}warning{% endif %} text-end">
+                {{ stats.ema_26_indicator }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    
+    <!-- Technical Indicators -->
+    <div class="card mb-4">
+      <div class="card-header">
+        <h5 class="mb-0"><i class="fas fa-chart-bar me-2"></i>Technical Indicators</h5>
+      </div>
+      <div class="card-body">
+        <table class="table table-sm">
+          <tbody>
+            <tr>
+              <td>MACD</td>
+              <td class="text-end">{{ stats.macd }}</td>
+              <td class="text-{% if stats.macd_indicator == 'Buy' %}success{% elif stats.macd_indicator == 'Sell' %}danger{% else %}warning{% endif %} text-end">
+                {{ stats.macd_indicator }}
+              </td>
+            </tr>
+            <tr>
+              <td>Stochastic</td>
+              <td class="text-end">{{ stats.stoch }}</td>
+              <td class="text-{% if stats.stoch_indicator == 'Buy' %}success{% elif stats.stoch_indicator == 'Sell' %}danger{% else %}warning{% endif %} text-end">
+                {{ stats.stoch_indicator }}
+              </td>
+            </tr>
+            <tr>
+              <td>Bollinger Bands</td>
+              <td class="text-end">{{ stats.bb_width }}</td>
+              <td class="text-{% if stats.bb_indicator == 'Buy' %}success{% elif stats.bb_indicator == 'Sell' %}danger{% else %}warning{% endif %} text-end">
+                {{ stats.bb_indicator }}
+              </td>
+            </tr>
+            <tr>
+              <td>ATR (14)</td>
+              <td class="text-end">{{ stats.atr }}</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    
+    <!-- Summary -->
+    <div class="card mb-4">
+      <div class="card-header">
+        <h5 class="mb-0"><i class="fas fa-balance-scale me-2"></i>Signal Summary</h5>
+      </div>
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>Technical Rating</div>
+          <span class="badge {% if stats.rating == 'Strong Buy' %}bg-success{% elif stats.rating == 'Buy' %}bg-success{% elif stats.rating == 'Neutral' %}bg-warning{% elif stats.rating == 'Sell' %}bg-danger{% elif stats.rating == 'Strong Sell' %}bg-danger{% endif %} p-2">{{ stats.rating }}</span>
+        </div>
+        
+        <div class="progress mb-3" style="height: 20px;">
+          <div class="progress-bar bg-success" role="progressbar" style="width: {{ stats.buy_signals }}%">
+            Buy ({{ stats.buy_signals }}%)
+          </div>
+          <div class="progress-bar bg-warning" role="progressbar" style="width: {{ stats.neutral_signals }}%">
+            Neutral ({{ stats.neutral_signals }}%)
+          </div>
+          <div class="progress-bar bg-danger" role="progressbar" style="width: {{ stats.sell_signals }}%">
+            Sell ({{ stats.sell_signals }}%)
+          </div>
+        </div>
+        
+        <form method="post" action="/download/csv" class="d-grid">
+          <input type="hidden" name="ticker" value="{{ ticker }}">
+          <input type="hidden" name="horizon" value="{{ horizon }}">
+          <button type="submit" class="btn btn-outline-secondary">
+            <i class="fas fa-file-csv me-2"></i>Download Forecast Data
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // This would be where we add interactive features like chart period switching
+  document.addEventListener('DOMContentLoaded', function() {
+    const periodButtons = document.querySelectorAll('.btn-group-sm .btn');
+    periodButtons.forEach(button => {
+      button.addEventListener('click', function() {
+        periodButtons.forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        // In a real app, this would trigger an AJAX call to update chart data
+      });
+    });
+  });
+</script>
+{% endblock %}

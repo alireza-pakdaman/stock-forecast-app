@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+{% block title %}Home | Stock Forecaster{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-10">
+    <div class="card mb-4">
+      <div class="card-header">
+        <h2 class="my-2"><i class="fas fa-search me-2"></i>Stock Analysis Dashboard</h2>
+      </div>
+      <div class="card-body">
+        <p class="lead mb-4">Enter a stock ticker symbol and select a forecast horizon to generate AI-powered price predictions and detailed market analytics.</p>
+        
+        <form method="post" class="row g-3 align-items-center mb-4">
+          <div class="col-md-5">
+            <label for="ticker" class="form-label">Stock Ticker</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="fas fa-tag"></i></span>
+              <input type="text" class="form-control form-control-lg" id="ticker" name="ticker" placeholder="AAPL" required>
+            </div>
+            <div class="form-text">Example: AAPL, MSFT, GOOG, AMZN</div>
+          </div>
+          
+          <div class="col-md-4">
+            <label for="horizon" class="form-label">Forecast Horizon</label>
+            <select name="horizon" id="horizon" class="form-select form-select-lg">
+              {% for d in (7,14,21,30,60,90) %}
+                <option value="{{d}}">{{d}}-day forecast</option>
+              {% endfor %}
+            </select>
+          </div>
+          
+          <div class="col-md-3 d-flex align-items-end">
+            <button type="submit" class="btn btn-primary btn-lg w-100">
+              <i class="fas fa-chart-line me-2"></i>Analyze
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+    
+    <div class="row">
+      <div class="col-md-4">
+        <div class="card stat-card">
+          <div class="card-body text-center">
+            <div class="stat-icon mb-2">
+              <i class="fas fa-robot"></i>
+            </div>
+            <h4 class="stat-value">AI Models</h4>
+            <p class="stat-label">Advanced forecasting using Prophet, ARIMA, and LSTM algorithms</p>
+          </div>
+        </div>
+      </div>
+      
+      <div class="col-md-4">
+        <div class="card stat-card">
+          <div class="card-body text-center">
+            <div class="stat-icon mb-2">
+              <i class="fas fa-chart-bar"></i>
+            </div>
+            <h4 class="stat-value">Technical Indicators</h4>
+            <p class="stat-label">Comprehensive technical analysis with multiple indicators</p>
+          </div>
+        </div>
+      </div>
+      
+      <div class="col-md-4">
+        <div class="card stat-card">
+          <div class="card-body text-center">
+            <div class="stat-icon mb-2">
+              <i class="fas fa-file-pdf"></i>
+            </div>
+            <h4 class="stat-value">Detailed Reports</h4>
+            <p class="stat-label">Export professional PDF reports with in-depth analysis</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
