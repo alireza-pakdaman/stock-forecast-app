@@ -158,68 +158,22 @@ def process_yfinance_data(df, ticker):
 
 @lru_cache(maxsize=128)
 def fetch_price_history(ticker: str, start: str = "2000-01-01", interval: str = "1d") -> pd.DataFrame:
-    """
-    Fetch stock price history with retry mechanism and improved error handling
-    """
-    max_retries = 3
-    retry_delay = 2  # seconds
+    df = yf.download(ticker, start=start, interval=interval, auto_adjust=True, progress=False)
+    if df.empty:
+        raise ValueError(f"No data for {ticker!r}")
     
-    for attempt in range(max_retries):
-        try:
-            logger.info(f"Fetching data for {ticker} (attempt {attempt+1}/{max_retries})")
-            
-            # Try to use Ticker object first which might handle API changes better
-            ticker_obj = yf.Ticker(ticker)
-            df = ticker_obj.history(start=start, interval=interval, auto_adjust=True)
-            
-            if df.empty:
-                # Fallback to download method if Ticker.history() returns empty
-                logger.warning(f"Empty result from Ticker.history() for {ticker}, trying download method")
-                df = yf.download(ticker, start=start, interval=interval, auto_adjust=True, progress=False)
-            
-            if df.empty:
-                logger.error(f"No data returned for {ticker}")
-                raise ValueError(f"No data for {ticker!r}")
-            
-            # Process the data into a consistent format
-            processed_df = process_yfinance_data(df, ticker)
-            
-            if processed_df.empty:
-                logger.error(f"Processing resulted in empty DataFrame for {ticker}")
-                raise ValueError(f"Failed to process data for {ticker}")
-                
-            # Make sure we have the minimum required columns
-            if 'close' not in processed_df.columns:
-                logger.error(f"No 'close' column after processing for {ticker}")
-                raise ValueError(f"Missing required 'close' column for {ticker}")
-            
-            logger.info(f"Successfully fetched and processed {len(processed_df)} records for {ticker}")
-            return processed_df
-            
-        except (URLError, HTTPError) as e:
-            logger.warning(f"Network error fetching {ticker}: {str(e)}")
-            if attempt < max_retries - 1:
-                logger.info(f"Retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
-                retry_delay *= 2  # Exponential backoff
-            else:
-                logger.error(f"Failed to fetch data from Yahoo Finance after {max_retries} attempts")
-                return try_alternative_sources(ticker, start)
-        
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON decode error for {ticker}: {str(e)}")
-            return try_alternative_sources(ticker, start)
-            
-        except Exception as e:
-            logger.error(f"Error fetching data for {ticker}: {str(e)}")
-            if "No timezone found" in str(e) or "delisted" in str(e):
-                logger.warning(f"Symbol {ticker} may be delisted or invalid, using fallback data")
-                return try_alternative_sources(ticker, start)
-            
-            if attempt < max_retries - 1:
-                logger.info(f"Retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
-                retry_delay *= 2
-            else:
-                logger.error(f"All attempts failed, using fallback data")
-                return try_alternative_sources(ticker, start)
+    # Handle multi-level column format if present
+    if isinstance(df.columns, pd.MultiIndex):
+        # Get the Close price column - in the new format it's ('Price', 'Close', 'AAPL')
+        close_col = [col for col in df.columns if 'Close' in col]
+        if close_col:
+            # Create a new DataFrame with just the close price
+            result_df = pd.DataFrame({'close': df[close_col[0]]})
+            result_df.index.name = "date"
+            return result_df
+    
+    # If not a multi-level column format, proceed with the old approach
+    df.dropna(inplace=True)
+    df.rename(columns=str.lower, inplace=True)
+    df.index.name = "date"
+    return df
