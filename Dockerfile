@@ -22,9 +22,13 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy and install requirements
+# Upgrade pip to latest version
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Copy and install requirements but ensure latest yfinance
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade yfinance==0.2.41
 
 # Copy the rest of the application
 COPY . .
