@@ -97,6 +97,65 @@ def try_alternative_sources(ticker, start):
     # Return fallback data
     return get_fallback_data(ticker)
 
+def process_yfinance_data(df, ticker):
+    """
+    Process the data from yfinance into a consistent format
+    """
+    logger.info(f"Processing yfinance data for {ticker}")
+    
+    # Check if the DataFrame is empty
+    if df.empty:
+        logger.error(f"Empty DataFrame for {ticker}")
+        return df
+    
+    # Log column structure to help debug
+    logger.info(f"Original columns for {ticker}: {df.columns}")
+    
+    # Handle multi-level column format 
+    if isinstance(df.columns, pd.MultiIndex):
+        logger.info(f"Multi-level columns detected for {ticker}")
+        
+        # Look for specific column names regardless of level
+        result_df = pd.DataFrame(index=df.index)
+        
+        # Find all the columns we need
+        for col_name in ['Close', 'Open', 'High', 'Low', 'Volume']:
+            # Find any column containing this name
+            matching_cols = [col for col in df.columns if col_name in str(col)]
+            
+            if matching_cols:
+                # Use the first matching column
+                result_df[col_name.lower()] = df[matching_cols[0]]
+                logger.info(f"Found and mapped {col_name} column for {ticker}")
+            else:
+                logger.warning(f"Could not find {col_name} column for {ticker}")
+        
+        # Ensure we have at least close prices
+        if 'close' not in result_df.columns and len(matching_cols) > 0:
+            # If we don't have a 'Close' column but have matched others, 
+            # use the first numeric column as close
+            numeric_cols = [col for col in result_df.columns 
+                           if pd.api.types.is_numeric_dtype(result_df[col])]
+            
+            if numeric_cols:
+                result_df['close'] = result_df[numeric_cols[0]]
+                logger.info(f"Using {numeric_cols[0]} as close price for {ticker}")
+    else:
+        # Handle regular column format
+        result_df = df.copy()
+        # Rename columns to lowercase
+        result_df.columns = [col.lower() for col in result_df.columns]
+        logger.info(f"Standard columns processed for {ticker}: {result_df.columns}")
+    
+    # Make sure index name is 'date'
+    result_df.index.name = 'date'
+    
+    # Drop any NaN values
+    result_df.dropna(inplace=True)
+    
+    logger.info(f"Final columns for {ticker}: {result_df.columns}")
+    return result_df
+
 @lru_cache(maxsize=128)
 def fetch_price_history(ticker: str, start: str = "2000-01-01", interval: str = "1d") -> pd.DataFrame:
     """
@@ -108,29 +167,34 @@ def fetch_price_history(ticker: str, start: str = "2000-01-01", interval: str = 
     for attempt in range(max_retries):
         try:
             logger.info(f"Fetching data for {ticker} (attempt {attempt+1}/{max_retries})")
-            df = yf.download(ticker, start=start, interval=interval, auto_adjust=True, progress=False)
+            
+            # Try to use Ticker object first which might handle API changes better
+            ticker_obj = yf.Ticker(ticker)
+            df = ticker_obj.history(start=start, interval=interval, auto_adjust=True)
+            
+            if df.empty:
+                # Fallback to download method if Ticker.history() returns empty
+                logger.warning(f"Empty result from Ticker.history() for {ticker}, trying download method")
+                df = yf.download(ticker, start=start, interval=interval, auto_adjust=True, progress=False)
             
             if df.empty:
                 logger.error(f"No data returned for {ticker}")
                 raise ValueError(f"No data for {ticker!r}")
             
-            # Handle multi-level column format if present
-            if isinstance(df.columns, pd.MultiIndex):
-                # Get the Close price column - in the new format it's ('Price', 'Close', 'AAPL')
-                close_col = [col for col in df.columns if 'Close' in col]
-                if close_col:
-                    # Create a new DataFrame with just the close price
-                    result_df = pd.DataFrame({'close': df[close_col[0]]})
-                    result_df.index.name = "date"
-                    logger.info(f"Successfully fetched {len(result_df)} records for {ticker}")
-                    return result_df
+            # Process the data into a consistent format
+            processed_df = process_yfinance_data(df, ticker)
             
-            # If not a multi-level column format, proceed with the old approach
-            df.dropna(inplace=True)
-            df.rename(columns=str.lower, inplace=True)
-            df.index.name = "date"
-            logger.info(f"Successfully fetched {len(df)} records for {ticker}")
-            return df
+            if processed_df.empty:
+                logger.error(f"Processing resulted in empty DataFrame for {ticker}")
+                raise ValueError(f"Failed to process data for {ticker}")
+                
+            # Make sure we have the minimum required columns
+            if 'close' not in processed_df.columns:
+                logger.error(f"No 'close' column after processing for {ticker}")
+                raise ValueError(f"Missing required 'close' column for {ticker}")
+            
+            logger.info(f"Successfully fetched and processed {len(processed_df)} records for {ticker}")
+            return processed_df
             
         except (URLError, HTTPError) as e:
             logger.warning(f"Network error fetching {ticker}: {str(e)}")
