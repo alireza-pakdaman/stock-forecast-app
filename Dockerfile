@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Install dependencies and wkhtmltopdf with correct dependencies
+# Install dependencies and wkhtmltopdf
 RUN apt-get update && apt-get install -y \
     build-essential \
     wget \
@@ -14,9 +14,10 @@ RUN apt-get update && apt-get install -y \
     libxrender1 \
     xfonts-75dpi \
     xfonts-base \
-    && wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6-1/wkhtmltox_0.12.6-1.buster_amd64.deb \
-    && apt install -y ./wkhtmltox_0.12.6-1.buster_amd64.deb \
-    && rm ./wkhtmltox_0.12.6-1.buster_amd64.deb \
+    && wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1/wkhtmltox_0.12.6.1.bullseye_amd64.deb \
+    && dpkg -i wkhtmltox_0.12.6.1.bullseye_amd64.deb || true \
+    && apt-get install -f -y \
+    && rm wkhtmltox_0.12.6.1.bullseye_amd64.deb \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -31,7 +32,7 @@ COPY . .
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
-ENV WKHTMLTOPDF_PATH=/usr/bin/wkhtmltopdf
+ENV WKHTMLTOPDF_PATH=/usr/local/bin/wkhtmltopdf
 
 # Expose the port the app runs on
 EXPOSE 8000
